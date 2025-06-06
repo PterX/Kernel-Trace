@@ -1,0 +1,12 @@
+#define TRACE_FLAG 511
+#define MAX_HOOK_NUM 1000
+#define SET_TRACE_SUCCESS 1000
+#define SET_TRACE_ERROR 1001
+
+enum trace_info {
+    SET_TARGET_FILE,
+    SET_MODULE_BASE,
+    SET_MODULE_OFFSET,
+    SET_TARGET_UID,
+    CLEAR_UPROBE,
+};
