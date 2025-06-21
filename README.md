@@ -13,6 +13,15 @@
 
 **set_fun_info**函数用于在so文件的指定偏移处设置uprobe挂载点，并可传递指定函数名。
 
+**set_fun_info2**函数用于在set_fun_info函数设置成功但失效的情况下，与set_fun_info函数作用一致
+
 **clear_all_uprobes**函数用于清除所有的uprobe挂载点。
 
 上述函数的返回结果有SET_TRACE_SUCCESS、SET_TRACE_ERROR两种，分别表示设置成功和失败。
+
+# 一些疑惑
+set_fun_info2函数其实就是将传入的函数偏移-0x1000再传递到内核，为什么要这样做？其实是因为
+在内核使用uprobe_register函数注册uprobe挂载点的时候在一些情况下会出现实际注册的函数偏移比
+传入的偏移多上0x1000，而如果我们传入的偏移-0x1000就正好抵消了这个影响。至于为什么会这样，
+我翻阅linux内核源码发现问题出现于[内存地址计算错误](https://elixir.bootlin.com/linux/v5.15.74/source/kernel/events/uprobes.c#L1004),从这里开始内存地址就多加上了0x1000，我推测是内存页少算了
+一页，但是具体原因不清楚。

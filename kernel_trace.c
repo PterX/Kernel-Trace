@@ -139,8 +139,7 @@ static int trace_handler(struct uprobe_consumer *self, struct mpt_regs *regs){
         if(tfun){
             goto target_out;
         }else{
-            fun_offset = fun_offset - 0x1000;
-            tfun = search_key_value(&fun_info_tree,fun_offset);
+            tfun = search_key_value(&fun_info_tree,fun_offset- 0x1000);
             if(likely(tfun)){
                 goto target_out;
             }
@@ -150,7 +149,7 @@ static int trace_handler(struct uprobe_consumer *self, struct mpt_regs *regs){
     }
     
 target_out:
-    logkd("+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
+//    logkd("+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
     int trace_printk_ret = trace_printk(_THIS_IP_,"+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
     if(unlikely(trace_printk_ret<0)){
         logke("+Test-Log+ trace_printk error\n");
