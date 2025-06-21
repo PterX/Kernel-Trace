@@ -10,7 +10,7 @@
 enum trace_info {
     SET_TARGET_FILE,
     SET_MODULE_BASE,
-    SET_MODULE_OFFSET,
+    SET_FUN_INFO,
     SET_TARGET_UID,
     CLEAR_UPROBE,
 };
@@ -32,8 +32,8 @@ int set_target_file(char* file_name){
     return ret;
 }
 
-int set_fun_offset(unsigned long fun_offset,char *fun_name){
-    int ret = syscall(__NR_mincore,fun_offset,TRACE_FLAG+SET_MODULE_OFFSET,fun_name);
+int set_fun_info(unsigned long fun_offset,char *fun_name){
+    int ret = syscall(__NR_mincore,fun_offset,TRACE_FLAG+SET_FUN_INFO,fun_name);
     return ret;
 }
 
