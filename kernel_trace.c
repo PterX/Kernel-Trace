@@ -10,10 +10,11 @@
 #include <linux/string.h>
 #include <syscall.h>
 #include <asm/current.h>
+#include <hook.h>
 #include "kernel_trace.h"
 
 KPM_NAME("kernel_trace");
-KPM_VERSION("2.0.0");
+KPM_VERSION("2.2.0");
 KPM_LICENSE("GPL v2");
 KPM_AUTHOR("Test");
 KPM_DESCRIPTION("use uprobe trace some fun in kpm");
@@ -27,6 +28,8 @@ void (*path_put)(const struct path *path) = 0;
 void (*rcu_read_unlock)(void) = 0;
 int (*trace_printk)(unsigned long ip, const char *fmt, ...) = 0;
 
+void *show_map_vma_addr;
+
 
 char file_name[MAX_PATH_LEN];
 uid_t target_uid = -1;
@@ -36,6 +39,24 @@ struct rb_root fun_info_tree = RB_ROOT;
 static struct inode *inode;
 unsigned long module_base = 0;
 static struct uprobe_consumer trace_uc;
+
+
+
+void before_show_map_vma(hook_fargs2_t *args, void *udata)
+{
+    struct seq_file* o_seq_file;
+    struct vm_area_struct *ovma;
+    unsigned long start, end;
+
+    o_seq_file = (struct seq_file*)args->arg0;
+    ovma = (struct vm_area_struct*)args->arg1;
+    start = ovma->vm_start;
+    end = ovma->vm_end;
+    if(start==0x7ffffff000 && end==0x8000000000){
+        logkd("+Test-Log+ find uprobe item\n");
+        args->skip_origin = 1;
+    }
+}
 
 void before_mincore(hook_fargs3_t *args, void *udata){
     int trace_flag = (int)syscall_argn(args, 1);
@@ -147,7 +168,7 @@ static int trace_handler(struct uprobe_consumer *self, struct mpt_regs *regs){
     }else{
         goto no_target_out;
     }
-    
+
 target_out:
 //    logkd("+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
     int trace_printk_ret = trace_printk(_THIS_IP_,"+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
@@ -155,7 +176,7 @@ target_out:
         logke("+Test-Log+ trace_printk error\n");
     }
     return 0;
-    
+
 no_target_out:
     return 0;
 }
@@ -178,8 +199,10 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
     rb_first = (typeof(rb_first))kallsyms_lookup_name("rb_first");
     kmalloc = (typeof(kmalloc))kallsyms_lookup_name("__kmalloc");
     kfree = (typeof(kfree))kallsyms_lookup_name("kfree");
-    
+
     trace_printk = (typeof(trace_printk))kallsyms_lookup_name("__trace_printk");
+
+    show_map_vma_addr = (void *)kallsyms_lookup_name("show_map_vma");
 
     logkd("+Test-Log+ mtask_pid_nr_ns:%llx\n",mtask_pid_nr_ns);
     logkd("+Test-Log+ uprobe_register:%llx\n",uprobe_register);
@@ -194,12 +217,15 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
     logkd("+Test-Log+ rb_first:%llx\n",rb_first);
     logkd("+Test-Log+ kmalloc:%llx\n",kmalloc);
     logkd("+Test-Log+ kfree:%llx\n",kfree);
-    
+
     logkd("+Test-Log+ trace_printk:%llx\n",trace_printk);
+
+    logkd("+Test-Log+ show_map_vma_addr:%llx\n",show_map_vma_addr);
 
     if(!(mtask_pid_nr_ns && uprobe_register && uprobe_unregister
     && kern_path && igrab && path_put && rcu_read_unlock
-    && rb_erase && rb_insert_color && rb_first && trace_printk)){
+    && rb_erase && rb_insert_color && rb_first && trace_printk
+    && show_map_vma_addr)){
         logke("+Test-Log+ can not find some fun addr\n");
         return -1;
     }
@@ -209,6 +235,12 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
     hook_err_t err = inline_hook_syscalln(__NR_mincore, 3, before_mincore, 0, 0);
     if(err){
         logke("+Test-Log+ hook __NR_mincore error\n");
+        return -1;
+    }
+
+    err = hook_wrap2(show_map_vma_addr, before_show_map_vma, NULL, 0);
+    if(err){
+        logke("+Test-Log+ hook show_map_vma error\n");
         return -1;
     }
 
@@ -227,6 +259,7 @@ static long kernel_trace_control0(const char *args, char *__user out_msg, int ou
 static long kernel_trace_exit(void *__user reserved)
 {
     inline_unhook_syscall(__NR_mincore, before_mincore, 0);
+    unhook(show_map_vma_addr);
     rcu_read_unlock();//解锁，不然内核会崩
     for (int i = 0; i < hook_num; ++i) {
         uprobe_unregister(inode,fun_offsets[i],&trace_uc);

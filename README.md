@@ -13,11 +13,17 @@
 
 **set_fun_info**函数用于在so文件的指定偏移处设置uprobe挂载点，并可传递指定函数名。
 
-**set_fun_info2**函数用于在set_fun_info函数设置成功但失效的情况下，与set_fun_info函数作用一致
+**set_fun_info2**函数用于在set_fun_info函数设置成功但失效的情况下，与set_fun_info函数作用一致。
 
 **clear_all_uprobes**函数用于清除所有的uprobe挂载点。
 
 上述函数的返回结果有SET_TRACE_SUCCESS、SET_TRACE_ERROR两种，分别表示设置成功和失败。
+
+# 使用示例
+编程思路可以参考[示例](https://github.com/AndroidReverser-Test/Il2cppTraceModule/blob/main/app/src/main/cpp/il2cpp_trace.cpp)
+
+# 支持的内核版本
+目前只在5.10以及5.15两个版本通过测试，理论上5.10以上版本都能正常使用。
 
 # 一些疑惑
 set_fun_info2函数其实就是将传入的函数偏移-0x1000再传递到内核，为什么要这样做？其实是因为

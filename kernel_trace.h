@@ -12,6 +12,7 @@
 struct inode;
 struct mm_struct;
 struct vfsmount;
+struct seq_file;
 
 struct hlist_bl_node {
     struct hlist_bl_node *next, **pprev;
@@ -73,5 +74,11 @@ struct uprobe_consumer {
     struct uprobe_consumer *next;
 };
 
+struct vm_area_struct {
+    /* The first cache line has the info for VMA tree walking. */
+
+    unsigned long vm_start;		/* Our start address within vm_mm. */
+    unsigned long vm_end;
+};
 
 struct pid_namespace;
