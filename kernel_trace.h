@@ -81,10 +81,4 @@ struct vm_area_struct {
     unsigned long vm_end;
 };
 
-struct map_info {
-    struct map_info *next;
-    struct mm_struct *mm;
-    unsigned long vaddr;
-};
-
 struct pid_namespace;

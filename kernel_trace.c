@@ -11,11 +11,10 @@
 #include <syscall.h>
 #include <asm/current.h>
 #include <hook.h>
-#include <linux/err.h>
 #include "kernel_trace.h"
 
 KPM_NAME("kernel_trace");
-KPM_VERSION("3.0.0");
+KPM_VERSION("2.2.0");
 KPM_LICENSE("GPL v2");
 KPM_AUTHOR("Test");
 KPM_DESCRIPTION("use uprobe trace some fun in kpm");
@@ -30,48 +29,32 @@ void (*rcu_read_unlock)(void) = 0;
 int (*trace_printk)(unsigned long ip, const char *fmt, ...) = 0;
 
 void *show_map_vma_addr;
-void *build_map_info_addr;
 
 
 char file_name[MAX_PATH_LEN];
 uid_t target_uid = -1;
 unsigned long fun_offsets[MAX_HOOK_NUM];
-unsigned long test_fun_addr;
 int hook_num = 0;
 struct rb_root fun_info_tree = RB_ROOT;
 static struct inode *inode;
 unsigned long module_base = 0;
 static struct uprobe_consumer trace_uc;
-static long long addr_fixer = 0;
 
 
 
 void before_show_map_vma(hook_fargs2_t *args, void *udata)
 {
+    struct seq_file* o_seq_file;
     struct vm_area_struct *ovma;
     unsigned long start, end;
 
+    o_seq_file = (struct seq_file*)args->arg0;
     ovma = (struct vm_area_struct*)args->arg1;
     start = ovma->vm_start;
     end = ovma->vm_end;
     if(start==0x7ffffff000 && end==0x8000000000){
         logkd("+Test-Log+ find uprobe item\n");
         args->skip_origin = 1;
-    }
-}
-
-void after_build_map_info(hook_fargs3_t *args, void *udata)
-{
-    struct map_info *tret = (struct map_info *)args->ret;
-    bool is_register = (bool)args->arg2;
-    unsigned long tvaddr = tret->vaddr;
-    long long fun_offset = (long long)args->arg1;
-
-    if(addr_fixer==0 && tvaddr!=test_fun_addr){
-        addr_fixer = test_fun_addr < tvaddr ? (-(tvaddr-test_fun_addr)) : (test_fun_addr-tvaddr);
-        logkd("+Test-Log+ addr_fixer:%lld\n",addr_fixer);
-        args->ret = ERR_PTR(-TRACE_FLAG);
-        return;
     }
 }
 
@@ -103,15 +86,7 @@ void before_mincore(hook_fargs3_t *args, void *udata){
             goto error_out;
         }
 //        logkd("+Test-Log+ fun_name:%s,fun_offset:0x%llx\n",fun_name,fun_offset);
-        if(addr_fixer==0){
-            test_fun_addr = module_base+fun_offset;
-        }
-        int hret = uprobe_register(inode,fun_offset+addr_fixer,&trace_uc);
-
-        if(hret==-TRACE_FLAG){
-            hret = uprobe_register(inode,fun_offset+addr_fixer,&trace_uc);
-        }
-
+        int hret = uprobe_register(inode,fun_offset,&trace_uc);
         if(hret<0){
             logke("+Test-Log+ set uprobe error in 0x%llx\n",fun_offset);
             goto error_out;
@@ -125,14 +100,12 @@ void before_mincore(hook_fargs3_t *args, void *udata){
     if(trace_info==SET_MODULE_BASE){
         module_base = (unsigned long)syscall_argn(args, 0);
         logkd("+Test-Log+ set module_base:0x%llx\n",module_base);
-        addr_fixer = 0;
         goto success_out;
     }
 
     if(trace_info==SET_TARGET_UID){
         target_uid = (uid_t)syscall_argn(args, 0);
         logkd("+Test-Log+ set target_uid:%d\n",target_uid);
-        addr_fixer = 0;
         goto success_out;
     }
 
@@ -149,19 +122,17 @@ void before_mincore(hook_fargs3_t *args, void *udata){
         inode = igrab(path.dentry->d_inode);
         path_put(&path);
         logkd("+Test-Log+ success set file inode\n");
-        addr_fixer = 0;
         goto success_out;
     }
 
     if(trace_info==CLEAR_UPROBE){
         rcu_read_unlock();//解锁，不然内核会崩
         for (int i = 0; i < hook_num; ++i) {
-            uprobe_unregister(inode,fun_offsets[i]+addr_fixer,&trace_uc);
+            uprobe_unregister(inode,fun_offsets[i],&trace_uc);
         }
         hook_num = 0;
         destroy_entire_tree(&fun_info_tree);
         logkd("+Test-Log+ success clear all uprobes\n");
-        addr_fixer = 0;
         goto success_out;
     }
 
@@ -186,8 +157,13 @@ static int trace_handler(struct uprobe_consumer *self, struct mpt_regs *regs){
     if(uid==target_uid){
         fun_offset = regs->pc-module_base;
         tfun = search_key_value(&fun_info_tree,fun_offset);
-        if(likely(tfun)){
+        if(tfun){
             goto target_out;
+        }else{
+            tfun = search_key_value(&fun_info_tree,fun_offset- 0x1000);
+            if(likely(tfun)){
+                goto target_out;
+            }
         }
     }else{
         goto no_target_out;
@@ -227,7 +203,6 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
     trace_printk = (typeof(trace_printk))kallsyms_lookup_name("__trace_printk");
 
     show_map_vma_addr = (void *)kallsyms_lookup_name("show_map_vma");
-    build_map_info_addr = (void *)kallsyms_lookup_name("build_map_info");
 
     logkd("+Test-Log+ mtask_pid_nr_ns:%llx\n",mtask_pid_nr_ns);
     logkd("+Test-Log+ uprobe_register:%llx\n",uprobe_register);
@@ -246,12 +221,11 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
     logkd("+Test-Log+ trace_printk:%llx\n",trace_printk);
 
     logkd("+Test-Log+ show_map_vma_addr:%llx\n",show_map_vma_addr);
-    logkd("+Test-Log+ build_map_info_addr:%llx\n",build_map_info_addr);
 
     if(!(mtask_pid_nr_ns && uprobe_register && uprobe_unregister
     && kern_path && igrab && path_put && rcu_read_unlock
     && rb_erase && rb_insert_color && rb_first && trace_printk
-    && show_map_vma_addr && build_map_info_addr)){
+    && show_map_vma_addr)){
         logke("+Test-Log+ can not find some fun addr\n");
         return -1;
     }
@@ -270,11 +244,6 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
         return -1;
     }
 
-     err = hook_wrap2(build_map_info_addr,NULL,after_build_map_info,0);
-    if(err){
-        logke("+Test-Log+ hook build_map_info error\n");
-        return -1;
-    }
 
     logkd("+Test-Log+ success init\n");
     return 0;
@@ -291,10 +260,9 @@ static long kernel_trace_exit(void *__user reserved)
 {
     inline_unhook_syscall(__NR_mincore, before_mincore, 0);
     unhook(show_map_vma_addr);
-    unhook(build_map_info_addr);
     rcu_read_unlock();//解锁，不然内核会崩
     for (int i = 0; i < hook_num; ++i) {
-        uprobe_unregister(inode,fun_offsets[i]+addr_fixer,&trace_uc);
+        uprobe_unregister(inode,fun_offsets[i],&trace_uc);
     }
     logkd("+Test-Log+ success clear all uprobes\n");
     destroy_entire_tree(&fun_info_tree);
