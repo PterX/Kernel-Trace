@@ -11,7 +11,7 @@
 
 **set_target_file**函数用于设置要hook so的路径(必须是完整路径)。
 
-**set_fun_info**函数用于在so文件的指定偏移处设置uprobe挂载点，并可传递指定函数名。
+**set_fun_info**函数第一个参数是要设置函数的uprobe偏移，计算方法见文末，第二个参数为函数偏移，第三个参数为自定义函数名。
 
 **clear_all_uprobes**函数用于清除所有的uprobe挂载点。
 

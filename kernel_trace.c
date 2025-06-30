@@ -14,7 +14,7 @@
 #include "kernel_trace.h"
 
 KPM_NAME("kernel_trace");
-KPM_VERSION("2.2.0");
+KPM_VERSION("2.3.0");
 KPM_LICENSE("GPL v2");
 KPM_AUTHOR("Test");
 KPM_DESCRIPTION("use uprobe trace some fun in kpm");
@@ -85,15 +85,21 @@ void before_mincore(hook_fargs3_t *args, void *udata){
             logke("+Test-Log+ same fun 0x%llx set uprobe\n",fun_offset);
             goto error_out;
         }
-//        logkd("+Test-Log+ fun_name:%s,fun_offset:0x%llx\n",fun_name,fun_offset);
-        int hret = uprobe_register(inode,fun_offset,&trace_uc);
+        logkd("+Test-Log+ fun_name:%s,fun_offset:%llx\n",fun_name,fun_offset);
+        goto success_out;
+    }
+
+    if(trace_info==SET_TARGET_UPROBE){
+        unsigned long rfun_offset = (unsigned long)syscall_argn(args, 0);
+        int hret = uprobe_register(inode,rfun_offset,&trace_uc);
         if(hret<0){
-            logke("+Test-Log+ set uprobe error in 0x%llx\n",fun_offset);
+            logke("+Test-Log+ set uprobe error in 0x%llx\n",rfun_offset);
             goto error_out;
         }
 
-        fun_offsets[hook_num] = fun_offset;
+        fun_offsets[hook_num] = rfun_offset;
         hook_num++;
+        logkd("+Test-Log+ rfun_offset:%llx\n",rfun_offset);
         goto success_out;
     }
 
@@ -157,13 +163,8 @@ static int trace_handler(struct uprobe_consumer *self, struct mpt_regs *regs){
     if(uid==target_uid){
         fun_offset = regs->pc-module_base;
         tfun = search_key_value(&fun_info_tree,fun_offset);
-        if(tfun){
+        if(likely(tfun)){
             goto target_out;
-        }else{
-            tfun = search_key_value(&fun_info_tree,fun_offset- 0x1000);
-            if(likely(tfun)){
-                goto target_out;
-            }
         }
     }else{
         goto no_target_out;
