@@ -14,7 +14,7 @@
 #include "kernel_trace.h"
 
 KPM_NAME("kernel_trace");
-KPM_VERSION("2.3.0");
+KPM_VERSION("3.5.0");
 KPM_LICENSE("GPL v2");
 KPM_AUTHOR("Test");
 KPM_DESCRIPTION("use uprobe trace some fun in kpm");
@@ -29,6 +29,7 @@ void (*rcu_read_unlock)(void) = 0;
 int (*trace_printk)(unsigned long ip, const char *fmt, ...) = 0;
 
 void *show_map_vma_addr;
+void *copy_insn_addr;
 
 
 char file_name[MAX_PATH_LEN];
@@ -36,11 +37,22 @@ uid_t target_uid = -1;
 unsigned long fun_offsets[MAX_HOOK_NUM];
 int hook_num = 0;
 struct rb_root fun_info_tree = RB_ROOT;
+struct rb_root fix_ins_tree = RB_ROOT;
 static struct inode *inode;
 unsigned long module_base = 0;
 static struct uprobe_consumer trace_uc;
 
 
+void before_copy_insn(hook_fargs5_t *args, void *udata){
+    struct my_key_value *ins_info;
+    loff_t offset = (loff_t)args->arg4;
+    ins_info = search_key_value(&fix_ins_tree,offset);
+    if(ins_info){
+       memcpy((void *)args->arg2,ins_info->value,INS_LEN);
+       args->ret = 0;
+       args->skip_origin = 1;
+    }
+}
 
 void before_show_map_vma(hook_fargs2_t *args, void *udata)
 {
@@ -86,6 +98,20 @@ void before_mincore(hook_fargs3_t *args, void *udata){
             goto error_out;
         }
         logkd("+Test-Log+ fun_name:%s,fun_offset:%llx\n",fun_name,fun_offset);
+        goto success_out;
+    }
+
+    if(trace_info==FIX_ORI_INS){
+        unsigned long rfun_offset = (unsigned long)syscall_argn(args, 0);
+        const char __user *ufix_ins = (typeof(ufix_ins))syscall_argn(args, 2);
+        char fix_ins[INS_LEN*2];
+        compat_strncpy_from_user(fix_ins,ufix_ins,INS_LEN*2);
+//        logkd("+Test-Log3+ insn:%lx %lx %lx %lx\n",fix_ins[0],fix_ins[1],fix_ins[2],fix_ins[3]);
+        int insert_ins_ret = insert_key_value(&fix_ins_tree,rfun_offset,fix_ins);
+        if(insert_ins_ret==-1){
+            logke("+Test-Log+ set insn for same fun 0x%llx\n",rfun_offset);
+            goto error_out;
+        }
         goto success_out;
     }
 
@@ -138,6 +164,7 @@ void before_mincore(hook_fargs3_t *args, void *udata){
         }
         hook_num = 0;
         destroy_entire_tree(&fun_info_tree);
+        destroy_entire_tree(&fix_ins_tree);
         logkd("+Test-Log+ success clear all uprobes\n");
         goto success_out;
     }
@@ -205,6 +232,8 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
 
     show_map_vma_addr = (void *)kallsyms_lookup_name("show_map_vma");
 
+    copy_insn_addr = (void *)kallsyms_lookup_name("__copy_insn");
+
     logkd("+Test-Log+ mtask_pid_nr_ns:%llx\n",mtask_pid_nr_ns);
     logkd("+Test-Log+ uprobe_register:%llx\n",uprobe_register);
     logkd("+Test-Log+ uprobe_unregister:%llx\n",uprobe_unregister);
@@ -223,10 +252,12 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
 
     logkd("+Test-Log+ show_map_vma_addr:%llx\n",show_map_vma_addr);
 
+    logkd("+Test-Log+ copy_insn_addr:%llx\n",copy_insn_addr);
+
     if(!(mtask_pid_nr_ns && uprobe_register && uprobe_unregister
     && kern_path && igrab && path_put && rcu_read_unlock
     && rb_erase && rb_insert_color && rb_first && trace_printk
-    && show_map_vma_addr)){
+    && show_map_vma_addr && copy_insn_addr)){
         logke("+Test-Log+ can not find some fun addr\n");
         return -1;
     }
@@ -245,6 +276,11 @@ static long kernel_trace_init(const char *args, const char *event, void *__user 
         return -1;
     }
 
+    err = hook_wrap5(copy_insn_addr, before_copy_insn, NULL, 0);
+    if(err){
+        logke("+Test-Log+ hook copy_insn error\n");
+        return -1;
+    }
 
     logkd("+Test-Log+ success init\n");
     return 0;
@@ -261,12 +297,14 @@ static long kernel_trace_exit(void *__user reserved)
 {
     inline_unhook_syscall(__NR_mincore, before_mincore, 0);
     unhook(show_map_vma_addr);
+    unhook(copy_insn_addr);
     rcu_read_unlock();//解锁，不然内核会崩
     for (int i = 0; i < hook_num; ++i) {
         uprobe_unregister(inode,fun_offsets[i],&trace_uc);
     }
     logkd("+Test-Log+ success clear all uprobes\n");
     destroy_entire_tree(&fun_info_tree);
+    destroy_entire_tree(&fix_ins_tree);
     logkd("kpm kernel_trace  exit\n");
 }
 
