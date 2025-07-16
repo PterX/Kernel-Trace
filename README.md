@@ -22,7 +22,7 @@
 编程思路可以参考[示例](https://github.com/AndroidReverser-Test/KernelTraceDemo/blob/main/app/src/main/cpp/kerneltracedemo.cpp)
 
 # 支持的内核版本
-目前只在5.15版本通过测试，理论上5.15及以上版本都能正常使用。
+目前只在5.10以及5.15两个版本通过测试，理论上5.10以上版本都能正常使用。
 
 # 一些疑惑
 ~~在内核使用uprobe_register函数注册uprobe挂载点的时候在一些特殊情况下会出现实际注册的函数偏移与传入的函数偏移不一致的问题，至于为什么会这样， 我翻阅linux内核源码发现问题出现于内存地址计算错误,从这里开始内存地址就出现了偏差，我推测是内存页计算有偏差，但是具体原因不清楚。~~
