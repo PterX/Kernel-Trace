@@ -3,7 +3,7 @@
 
 
 #define TRACE_FLAG 511
-#define MAX_HOOK_NUM 1000
+#define MAX_HOOK_NUM 10000
 #define SET_TRACE_SUCCESS 1000
 #define SET_TRACE_ERROR 1001
 
@@ -52,4 +52,9 @@ int set_fun_info(unsigned long uprobe_offset,unsigned long fun_offset,char *fun_
 int clear_all_uprobes(){
     int ret = syscall(__NR_mincore,0,TRACE_FLAG+CLEAR_UPROBE,"");
     return ret;
+}
+
+int set_fun_ins(unsigned long uprobe_offset,char *fix_insn){
+    int fix_insn_ret = syscall(__NR_mincore,uprobe_offset,TRACE_FLAG+FIX_ORI_INS,fix_insn);
+    return fix_insn_ret;
 }

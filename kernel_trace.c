@@ -12,7 +12,7 @@
 #include "kernel_trace.h"
 
 KPM_NAME("kernel_trace");
-KPM_VERSION("4.0.0");
+KPM_VERSION("4.5.0");
 KPM_LICENSE("GPL v2");
 KPM_AUTHOR("Test");
 KPM_DESCRIPTION("use uprobe trace some fun in kpm");
@@ -55,6 +55,11 @@ void before_copy_insn(hook_fargs5_t *args, void *udata){
     if(ins_info){
        memcpy((void *)args->arg2,ins_info->value,INS_LEN);
 //       logkd("+Test-Log+ offset:%lx,fix ins:%x %x %x %x\n",offset,ins_info->value[0],ins_info->value[1],ins_info->value[2],ins_info->value[3]);
+
+       rb_erase(&ins_info->node,&fix_ins_tree);
+       kfree(ins_info->value);
+       kfree(ins_info);
+
        args->ret = 0;
        args->skip_origin = 1;
     }
@@ -210,7 +215,7 @@ static int trace_handler(struct uprobe_consumer *self, struct mpt_regs *regs){
 
 target_out:
 //    logkd("+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
-    int trace_printk_ret = trace_printk(_THIS_IP_,"+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
+    int trace_printk_ret = trace_printk(0,"+Test-Log+ fun_name:%s,fun_offset:0x%llx calling\n",tfun->value,fun_offset);
     if(unlikely(trace_printk_ret<0)){
         logke("+Test-Log+ trace_printk error\n");
     }
